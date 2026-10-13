@@ -18,7 +18,48 @@ jobs:
           dotnet-version: 10.0.x
       - name: Testes da loja
         run: dotnet test LojaProducao.slnx -c Release --verbosity quiet
-
-  # LAB-002 e LAB-003: adicionar publish, dependente de tests.
-  # O workflow atual executa testes, mas ainda NAO publica imagens.
-  # Consulte README e a branch gabarito do template original.
+  publish:
+    needs: tests
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v6
+      - name: Namespace e versao
+        id: image
+        shell: bash
+        run: |
+          echo "namespace=${GITHUB_REPOSITORY,,}" >> "$GITHUB_OUTPUT"
+          echo "base=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_OUTPUT"
+          echo "version=${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
+      - name: Login no GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build e push da web
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: LojaGraphQL.Api/Dockerfile
+          push: true
+          tags: ${{ steps.image.outputs.base }}/web:${{ steps.image.outputs.version }}
+      - name: Build e push do worker
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: LojaGraphQL.Worker/Dockerfile
+          push: true
+          tags: ${{ steps.image.outputs.base }}/worker:${{ steps.image.outputs.version }}
+      - name: Resumo da publicacao
+        shell: bash
+        run: |
+          {
+            echo "## Imagens publicadas"
+            echo "- Namespace: \`${{ steps.image.outputs.namespace }}\`"
+            echo "- Versao: \`${{ steps.image.outputs.version }}\`"
+            echo "- \`${{ steps.image.outputs.base }}/web:${{ steps.image.outputs.version }}\`"
+            echo "- \`${{ steps.image.outputs.base }}/worker:${{ steps.image.outputs.version }}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
